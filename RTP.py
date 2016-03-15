@@ -15,11 +15,10 @@ class RTP:
         self.sPort = sPort
         self.dPort = dPort
         self.server = server
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # s is the socket
         self.seqn = 0
-        self.wOffset = 0
         self.chksum = 0
-        self.ssthresh = 0
+        self.tthresh = 0 # Threshld for RTT timeout
         self.filename = ''
         self.sendBuffer = []
         self.recvBuffer = []
