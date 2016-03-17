@@ -5,7 +5,7 @@ import time
 
 class RTP:
     MAXSIZE = 1024
-    class Connection(Enum): #
+    class Connection(Enum): #state of the connection
         CLOSED = 0
         LISTEN = 1
         CONNECTED = 2
