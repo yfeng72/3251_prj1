@@ -31,9 +31,8 @@ class RTP:
         synpkt_hdr.timestamp = int(time.time())
         synpkt = RTPpkt(synpkt_hdr, None, False)
         synpkt.checkSum()
-        sndpkt = synpkt.byteArray
         addr = self.ip_addr, self.dPort
-        self.s.sendto(sndpkt, addr)
+        self.s.sendto(synpkt.encode(), addr)
         seqn += 1
         self.state = Connection.LISTEN
         listen()
@@ -116,4 +115,3 @@ class RTP:
             sndpkt = RTPpkt(pkt_hdr, segment, False)
             sndpkt.checkSum()
             sendpkt(sndpkt)
-    
