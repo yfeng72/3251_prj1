@@ -2,9 +2,9 @@ from enum import Enum
 import socket
 import sys
 import time
-
+import math
 class RTP:
-    MAXSIZE = 1024
+    MAXSIZE = 512
     class Connection(Enum): #state of the connection
         CLOSED = 0
         LISTEN = 1
@@ -28,38 +28,38 @@ class RTP:
         synpkt_hdr.SYN = True
         synpkt_hdr.BEG = True
         synpkt_hdr.FIN = True
-        synpkt_hdr.timestamp = time.time()
-        synpkt = RTPpkt(synpkt_hdr, None)
+        synpkt_hdr.timestamp = int(time.time())
+        synpkt = RTPpkt(synpkt_hdr, None, False)
         synpkt.checkSum()
-        sndpkt = synpkt.getByteArray()
+        sndpkt = synpkt.byteArray
         addr = self.ip_addr, self.dPort
         self.s.sendto(sndpkt, addr)
         seqn += 1
         self.state = Connection.LISTEN
         listen()
 
-    def sendpkt(data): #sends a packet
+    def send(data): #sends a packet
         sndpkt_hdr = RTPhdr(sPort,dPort, self.seqn)
         sndpkt_hdr.BEG = True
         sndpkt_hdr.FIN = True
-        sndpkt_hdr.timestamp = time.time()
-        sndpkt = RTPpkt(sndpkt_hdr, data)
+        sndpkt_hdr.timestamp = int(time.time())
+        sndpkt = RTPpkt(sndpkt_hdr, data, False)
         sndpkt.checkSum()
-        send(sndpkt)
+        sendpkt(sndpkt)
 
-    def send(data):
+    def sendpkt(packet):
         self.seqn += 1
         addr = self.ip_addr, self.dPort
-        self.s.sendto(sndpkt, addr)
+        self.s.sendto(packet.encode(), addr)
 
     def startServer(): #starts server
         self.state = Connection.LISTEN
     
     def listen(): #listen and trasfer files for both client and server
         while (((not self.server and self.state == Connection.LISTEN) or (self.server and self.state != Connection.CLOSED)):
-            data, addr = self.s.recvfrom(1024)
-            data = data.strip()
-            rcvpkt = RTPpkt(data)
+            data, addr = self.s.recvfrom(MAXSIZE)
+            data = data.decode().strip()
+            rcvpkt = RTPpkt(None, data, True)
             rcvpkt_hdr = rcvpkt.hdr
             if (rcvpkt_hdr.checkSum() == rcvpkt.chksum):
                 if (server and rcvpkt_hdr.SYN == True):
@@ -68,9 +68,9 @@ class RTP:
                     response_hdr.SYN = True
                     response_hdr.BEG = True
                     response_hdr.FIN = True
-                    response_hdr.timestamp = time.time()
+                    response_hdr.timestamp = int(time.time())
                     response_hdr.seqn = self.seqn
-                    response = RTPpkt(response_hdr, None)
+                    response = RTPpkt(response_hdr, None, False)
                     response.checkSum()
                     addr = self.ip_addr, self.dPort
                     self.s.sendto(response, addr)
@@ -79,9 +79,9 @@ class RTP:
                 elif (server and rcvpkt_hdr.SYN):
                     self.state = Connection.CONNECTED
                 while (not rcvpkt_hdr.FIN):
-                    data, addr = self.s.recvfrom(1024)
+                    data, addr = self.s.recvfrom(MAXSIZE)
                     data = data.strip()
-                    rcvpkt = RTPpkt(data)
+                    rcvpkt = RTPpkt(None, data, True)
                     rcvpkt_hdr = rcvpkt.hdr
                     if (rcvpkt_hdr.chksum == rcvpkt_hdr.checkSum()):
                         recvBuffer.append(rcvpkt)
@@ -97,3 +97,23 @@ class RTP:
                         f.write(output)
                     recvBuffer = []
                     self.state = Connection.CLOSED
+
+    def sendFile(filename):
+        content = ''
+        segment = ''
+        count = 0
+        with open(filename, 'r') as f:
+            content = f.read()
+        count = int(math.ceil(len(content) / float(MAXSIZE - 1)))
+        for pktn in range(count):
+            pkt_hdr = RTPhdr(sPort, dPort, pktn)
+            pkt_hdr.seqn = seqn
+            pkt_hdr.timestamp = int(time.time())
+            pkt_hdr.offset = pktn
+            pkt_hdr.BEG = (pktn == 0)
+            pkt_hdr.FIN = (pktn == count - 1)
+            segment = content[pktn * MAXSIZE : len(content)] if (pktn == count - 1) else content[pktn * MAXSIZE : (pktn + 1) * MAXSIZE]
+            sndpkt = RTPpkt(pkt_hdr, segment, False)
+            sndpkt.checkSum()
+            sendpkt(sndpkt)
+    
