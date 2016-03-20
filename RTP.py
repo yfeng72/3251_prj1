@@ -104,7 +104,8 @@ class RTP:
 #Server-side listen and transfer, returns None if accepted or closed a connection
 #Also returns None if a client sends to an unconnected server
 #Otherwise returns the packet it received.
-#This method handles client file posting automatically
+#This method handles CLIENT-SIDE FILE POSTING automatically
+#This method needs to be called in an infinite loop, as it only receives and sends one packet to each client per call
     def listen(self): 
         #scan for new packets first
         data, addr = self.s.recvfrom(1024)
@@ -114,7 +115,7 @@ class RTP:
                 accept(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
             elif (rcvpkt.hdr.FIN and not rcvpkt.hdr.ACK):
                 close(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
-            elif (self.state[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] == Connection.CONNECTED):
+            elif (((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.state) and self.state[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] == Connection.CONNECTED):
                 if (rcvpkt.hdr.BEG):
                     self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = [rcvpkt.truncate(data)]
                 elif (not rcvpkt.hdr.FIN):
@@ -146,7 +147,7 @@ class RTP:
         with open('get_' + filename, 'w') as f:
             f.write(content)
             
-#both client and server can use this to send a message
+#both client and server can use this to send a single message
     def send(self, message, ip_dest, uPort, dPort):
         sndpkt_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, self.seqn)
         sndpkt_hdr.sPort_udp = self.udp_port
@@ -154,7 +155,7 @@ class RTP:
         self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
         self.seqn += 1
 
-#only for the client, listen() returns the received packet for servers.
+#only used by the client, listen() returns the received packet from clients.
     def recv(self, ip_dest, uPort, dPort):
         data = ''
         while (not data):
@@ -202,30 +203,83 @@ class RTPpkt:
         #data is in the form of String, raw_data is in the form of byte array 
         if (is_raw_data):
             self.checksum = (data[0] << 8) + data[1] 
-            self.length = (data[1] << 8) + data[2] 
+            self.length = (data[2] << 8) + data[3] 
             self.hdr = parseHeader(data)
             self.data = truncate(data)
         else:
             self.hdr = header
             self.data = data
             self.checkSum()
+            self.length = 0
             self.length = len(self.toByteArray())
 
+#calculates checksum, stores it in self.checksum
     def checkSum():
-        #TODO: updates the checksum of the packet, store it in self.checksum
-        pass
+        self.checksum = sum(self.toByteArray[3:]) % 0xffff
+
+#Coding header in packet bytes: bytes 4-7 are ip_src, bytes 8-9 are udp port, bytes 10-11 are rtp port of source. Bytes 12-19 are similarly structured for destination
+#Bytes 20-23 hold sequence number, bytes 24-25 hold offset number, byte 26 is flags, bytes 27-30 hold timestamp
     def parseHeader(raw_data):
-        #TODO: parse the header from raw data, returns RTPhdr object
-        pass
+        ip_src = str(raw_data[4]) + '.' + str(raw_data[5]) + '.' + str(raw_data[6]) + '.' + str(raw_data[7])
+        sPort = raw_data[10] << 8 + raw_data[11]
+        ip_dest = str(raw_data[12]) + '.' + str(raw_data[13]) + '.' + str(raw_data[14]) + '.' + str(raw_data[15])
+        dPort = raw_data[18] << 8 + raw_data[19]
+        seqn = (raw_data[20] << 24) + (raw_data[21] << 16) + (raw_data[22] << 8) + raw_data[23]
+        hdr = RTPhdr(ip_src, sPort, ip_dest, dPort, seqn)
+        hdr.offset = raw_data[24] << 8 + raw_data[25]
+        hdr.sPort_udp = raw_data[8] << 8 + raw_data[9]
+        hdr.dPort_udp = raw_data[16] << 8 + raw_data[17]
+        hdr.SYN = raw_data[26] ^ 8 < raw_data[26]
+        hdr.ACK = raw_data[26] ^ 4 < raw_data[26]
+        hdr.BEG = raw_data[26] ^ 2 < raw_data[26]
+        hdr.FIN = raw_data[26] ^ 1 < raw_data[26]
+        hdr.timestamp = (raw_data[27] << 24) + (raw_data[28] << 16) + (raw_data[29] << 8) + raw_data[30]
+        return hdr
+
+#      Returns the byte array of the packet, checksum needs to be 
+#      converted to one byte and appended to the front of the byte array, 
+#      header bytes need to be encoded and appended after the checksum byte 
+#      and the length byte, data bytes last. IT IS POSSIBLE FOR DATA TO BE None.
     def toByteArray():
-        #TODO: returns the byte array of the packet, checksum needs to be 
-        #      converted to one byte and appended to the front of the byte array, 
-        #      header bytes need to be encoded and appended after the checksum byte 
-        #      and the length byte, data bytes last. IT IS POSSIBLE FOR DATA TO BE None.
-        
+        content = []
+        content.append(self.checksum >> 8)                                          #bit 0
+        content.append(self.checksum - ((self.checksum >> 8) << 8))                 
+        content.append(self.length >> 8)                                            #bit 2
+        content.append(self.length - ((self.length >> 8) << 8)) 
+        content.append(self.hdr.ip_src.split('.')[0])                               #bit 4
+        content.append(self.hdr.ip_src.split('.')[1])                               
+        content.append(self.hdr.ip_src.split('.')[2])
+        content.append(self.hdr.ip_src.split('.')[3])
+        content.append(self.hdr.sPort_udp >> 8)
+        content.append(self.hdr.sPort_udp - ((self.hdr.sPort_udp >> 8) << 8))
+        content.append(self.hdr.sPort >> 8)
+        content.append(self.hdr.sPort - ((self.hdr.sPort >> 8) << 8))
+        content.append(self.hdr.ip_dest.split('.')[0])                              #bit 12
+        content.append(self.hdr.ip_dest.split('.')[1])
+        content.append(self.hdr.ip_dest.split('.')[2])
+        content.append(self.hdr.ip_dest.split('.')[3])
+        content.append(self.hdr.dPort_udp >> 8)
+        content.append(self.hdr.dPort_udp - ((self.hdr.dPort_udp >> 8) << 8))
+        content.append(self.hdr.dPort >> 8)
+        content.append(self.hdr.dPort - ((self.hdr.dPort >> 8) << 8))               
+        content.append(self.hdr.seqn >> 24)                                         #bit 20
+        content.append((self.hdr.seqn >> 16) - ((self.hdr.seqn >> 24) << 8))
+        content.append((self.hdr.seqn >> 8) - ((self.hdr.seqn >> 16) << 8))
+        content.append(self.hdr.seqn - ((self.hdr.seqn >> 8) << 8))
+        content.append(self.hdr.offset >> 8)                                        #bit 24
+        content.append(self.hdr.offset - ((self.hdr.seqn >> 8) << 8))
+        content.append((int(self.hdr.SYN) << 3) + (int(self.hdr.ACK) << 2) + (int(self.hdr.BEG) << 1) + int(self.hdr.FIN))
+        content.append(self.hdr.seqn >> 24)                                         #bit 27
+        content.append((self.hdr.seqn >> 16) - ((self.hdr.seqn >> 24) << 8))
+        content.append((self.hdr.seqn >> 8) - ((self.hdr.seqn >> 16) << 8))
+        content.append(self.hdr.seqn - ((self.hdr.seqn >> 8) << 8))                 #bit 30
+        for char in self.data:
+            content.append(ord(char))
+        return bytes(content)
+
+#returns the payload of a packet byte array in string format    
     def truncate(raw_data):
-        #TODO: truncates raw data, returns payload in String format
-        pass
+        return(raw_data[31 : (raw_data[2] << 8) + raw_data[3]].decode())
 
 class RTPhdr:
     def RTPhdr(ip_src, sPort, ip_dest, dPort, seqn):
