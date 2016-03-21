@@ -12,16 +12,16 @@ class RTP:
 
     def __init__(self, ip_addr, udp_port, rtp_port, server, receiveWindow):
         self.ip_addr = ip_addr
-        self.pktQ = {}
-        self.connections = {}
+        self.pktQ = {}                                              #dictionary, key is client address & port tuple, value is list of packets                                               
         self.rtp_port = rtp_port
         self.udp_port = udp_port
         self.server = server
         self.rwnd = receiveWindow
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # s is the socket
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)   #s is the socket
         self.seqn = 0 # sequence number
-        self.state = {}
-        self.files = {}
+        self.state = {}                                             #dictionary, key is client address & port tuple, value is connection state
+        self.files = {}                                             #dictionary, key is client address & port tuple, value is list of file segments in order
+        self.prevpkts = {}                                          #dictionary, key is client address & port tuple, value is list of the previous packet for each client
 
     def connect(self, ip_dest, uPort, dPort): #client-side establishment of connection
         synpkt_hdr = RTPhdr(ip_src, self.rtp_port, ip_dest, dPort, 0)
@@ -111,6 +111,9 @@ class RTP:
         data, addr = self.s.recvfrom(1024)
         if (data):
             rcvpkt = RTPpkt(None, data, True)
+            #Duplicate detection: drop packet from same client with identical seqn as the previous packet
+            if (((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.prevpkts) and self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].hdr.seqn == rcvpkt.hdr.seqn):
+                return
             if (rcvpkt.hdr.SYN):
                 accept(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
             elif (rcvpkt.hdr.FIN and not rcvpkt.hdr.ACK):
@@ -128,8 +131,10 @@ class RTP:
                     with open('post_' + self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort][0], 'w') as f:
                         f.write(content)
                     self.files.pop((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort))
+                self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = rcvpkt
                 sendpkts()
                 return (rcvpkt.truncate(data), rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
+        self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = rcvpkt
         sendpkts()
 
         
@@ -218,7 +223,7 @@ class RTPpkt:
         self.checksum = sum(self.toByteArray[3:]) % 0xffff
 
 #Coding header in packet bytes: bytes 4-7 are ip_src, bytes 8-9 are udp port, bytes 10-11 are rtp port of source. Bytes 12-19 are similarly structured for destination
-#Bytes 20-23 hold sequence number, bytes 24-25 hold offset number, byte 26 is flags, bytes 27-30 hold timestamp
+#Bytes 20-23 hold sequence number, bytes 24-25 hold offset number, byte 26 is flags, bytes 27-30 hold timestamp. Length of non-payload: 30 Bytes
     def parseHeader(raw_data):
         ip_src = str(raw_data[4]) + '.' + str(raw_data[5]) + '.' + str(raw_data[6]) + '.' + str(raw_data[7])
         sPort = raw_data[10] << 8 + raw_data[11]
