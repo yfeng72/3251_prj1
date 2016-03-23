@@ -22,23 +22,20 @@ def main():
             continue
         print ('Connection address:', result[1:])
         data = result[0]
-        print('data: ' + data)
+        print('From Client: ' + result)
         ip_dest = result[1]
         uPort = result[2]
         rPort = result[3]
         if len(data) < 2:
             r.send('Illegal inputs.', ip_dest, uPort, rPort)
-            r.close(ip_dest, uPort, rPort)
             k = 0
-        m = data[:-1].split(',')
+        m = data.split(',')
         if len(m) < 2:
             r.send('Illegal inputs.', ip_dest, uPort, rPort)
-            r.close(ip_dest, uPort, rPort)
             k = 0
         if m[0] not in t[0]:
             #non-existing GTID
             r.send('Cannot find GTID.', ip_dest, uPort, rPort)
-            r.close(ip_dest, uPort, rPort)
             k = 0
         if not k:
             continue
@@ -48,15 +45,14 @@ def main():
             if i not in c:
                 #bad arguments passed in
                 r.send(('Non-existing attribute \"' + i + '\".'), ip_dest, uPort, rPort)
-                r.close(ip_dest, uPort, rPort)
                 k = 0
                 break
             msg += i + ': ' + str(t[c.index(i)][row]) + ', '
         if not k: 
             continue
         #send data
+        print(msg)
         r.send(msg[:-2], ip_dest, uPort, rPort)
-        print ("received data:", data)
-        r.close(ip_dest, uPort, rPort)
+        print ("Received data:", data)
 
 main()

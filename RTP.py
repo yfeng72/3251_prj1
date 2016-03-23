@@ -56,7 +56,6 @@ class RTP:
         synack = RTPpkt(synack_hdr, None, False)
         self.queue(synack)
         self.state[ip_client, uPort, dPort] = Connection.CONNECTED
-        print('accepted')
 
 
     def queue(self, pkt): #queues a packet to sending packet list
@@ -91,7 +90,6 @@ class RTP:
             finpkt = RTPpkt(finpkt_hdr, None, False)
             self.s.sendto(finpkt.toByteArray(), (ip_dest, uPort))
             self.seqn += 1
-            data = ''
 
 
 #Server-side listen and transfer, returns None if accepted or closed a connection
@@ -100,11 +98,11 @@ class RTP:
 #This method handles CLIENT-SIDE FILE POSTING automatically
 #This method needs to be called in an infinite loop, as it only receives and sends one packet to each client per call
     def listen(self): 
+        self.sendpkts()
         #scan for new packets first
         data, addr = self.s.recvfrom(1024)
         if (data):
             rcvpkt = RTPpkt(None, data, True)
-            print(rcvpkt.length)
             #Duplicate detection: drop packet from same client with identical seqn as the previous packet
             if (((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.prevpkts) and self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].hdr.seqn == rcvpkt.hdr.seqn and self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].hdr.timestamp == rcvpkt.hdr.timestamp):
                 self.sendpkts()
@@ -131,7 +129,7 @@ class RTP:
                 self.sendpkts()
                 return (rcvpkt.truncate(data), rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
             self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = rcvpkt
-        self.sendpkts()
+        
 
         
 
@@ -154,7 +152,7 @@ class RTP:
         sndpkt_hdr.sPort_udp = self.udp_port
         sndpkt_hdr.dPort_udp = uPort
         sndpkt = RTPpkt(sndpkt_hdr, message, False)
-        if (self.server):
+        if (not self.server):
             self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
             self.seqn += 1
         else:
