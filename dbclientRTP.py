@@ -1,12 +1,13 @@
 import socket
 import sys
 import RTP
+
 def main():
     if (len(sys.argv) < 3):
         print ("Requires an IP address and port number to send to, as well as the window size.")
         return (-1)
     HOST_IP = socket.gethostbyname(socket.gethostname())
-    HOST_PORT = int(sys.argv[1][sys.argv[1].index(':') + 1:]) + 5
+    HOST_PORT = int(sys.argv[1][sys.argv[1].index(':') + 1:])
     UDP_IP = sys.argv[1][:sys.argv[1].index(':')]
     UDP_PORT = int(sys.argv[1][sys.argv[1].index(':') + 1:])
     RTP_PORT = int(sys.argv[1][sys.argv[1].index(':') + 1:])
@@ -17,7 +18,7 @@ def main():
     for s in sys.argv[3:]:
         MESSAGE += s + ','
     MESSAGE = MESSAGE[:-1]
-    r = RTP.RTP(HOST_IP, HOST_PORT, HOST_PORT + 3, False, rwnd)
+    r = RTP.RTP(HOST_IP, HOST_PORT, HOST_PORT, False, rwnd)
     r.connect(UDP_IP, UDP_PORT, RTP_PORT)
     print('Connected to Server')
     r.send(MESSAGE, UDP_IP, UDP_PORT, RTP_PORT)

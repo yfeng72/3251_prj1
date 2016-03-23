@@ -304,10 +304,6 @@ class RTPhdr:
         self.FIN = False
         self.timestamp = int(time.time())
 
-<<<<<<< HEAD
     def updateTimestamp(self):
         self.timestamp = int(time.time())
-=======
-    def updateTimestamp():
-        self.timestamp = int(time.time())
->>>>>>> origin/master
+
