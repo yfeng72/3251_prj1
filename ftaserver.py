@@ -8,4 +8,8 @@ def main():
     else:
         port = int(sys.argv[1])
         window = int(sys.argv[2])
+        receipt = None
+        RTPserv = RTP(None, port, port, True, window)
+        while True:
+            receipt = RTPserv.listen()
         

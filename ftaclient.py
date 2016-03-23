@@ -7,7 +7,7 @@ def main():
         return -1
     else:
         arg1 = sys.args[1].split(":")
-        ip = int(arg1[0])
+        ip = arg1[0]
         port = int(arg1[1])
         window = int(sys.argv[2])
         rtp = RTP(ip, port, port, False, window)
