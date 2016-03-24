@@ -1,39 +1,44 @@
-from RTP import *
-from sys import *
+import RTP
+import sys
+import socket
 
+def main():
+    if len(sys.argv) != 3:
+        print("Requires an IP address and port number to send to, as well as the window size.")
+        return -1
+    else:
+        arg1 = sys.argv[1].split(":")
+        host_ip = socket.gethostbyname(socket.gethostname())
+        host_port = int(arg1[1]) + 1
+        dest_ip = arg1[0]
+        port = int(arg1[1])
+        window = int(sys.argv[2])
+        r = RTP.RTP(host_ip, host_port, host_port, False, window)
+        r.connect(dest_ip, port, port)
+        print("Connected to server at " + str(dest_ip) + ':' + str(port))
+        comm = None
+        while (not comm or (comm and comm[0].lower() != "disconnect")):
+            comm = input("Enter a command, or help for available commands: ")
+            comm = comm.split(" ")
+            if comm[0].lower() == "help":
+                print("get F --------- downloads a file F from the server\n")
+                print("get-post F G -- downloads F from the server and uploads G\n")
+                print("disconnect ---- disconnects from the server and closes the application\n")
+            elif comm[0].lower() == "get":
+                filename = comm[1]
+                r.getFile(filename, dest_ip, port, port)
+                print("Downloaded get_{0} from server".format(filename))
+            elif comm[0].lower() == "get-post":
+                getFile = comm[1]
+                sendFile = comm[2]
+                r.getFile(getFile, dest_ip, port, port)
+                print('file obtained')
+                r.sendFile(sendFile, dest_ip, port, port)
+                print("Downloaded get_{0}, sent post_{1}".format(getFile, sendFile))
+            elif comm[0].lower() == "disconnect":
+                r.close(dest_ip, port, port)
+                print("Disconnected from server at {0}.  Goodbye!".format(dest_ip))
+                break
 
-if len(sys.argv) != 3:
-    print("Requires an IP address and port number to send to, as well as the window size.")
-    return -1
-else:
-    arg1 = sys.args[1].split(":")
-    ip = arg1[0]
-    port = int(arg1[1])
-    window = int(sys.argv[2])
-    rtp = RTP(ip, port, port, False, window)
-    rtp.connect(ip, port, port)
-    print(format("Connected to server at {0}", ip))
-    comm = None
-    while comm.split[0].lower() != "disconnect":
-        comm = input("Enter a command, or help for available commands: ")
-        comm = comm.split(" ")
-        if comm[0].lower() == "help":
-            print("get F --------- downloads a file F from the server\n")
-            print("get-post F G -- downloads F from the server and uploads G\n")
-            print("disconnect ---- disconnects from the server and closes the application\n")
-        elif comm[0].lower() == "get":
-            filename = comm[1]
-            rtp.getFile(filename, ip, port, port)
-            print(format("Downloaded get_{0} from server", filename))
-        elif comm[0].lower() == "get-post":
-            getFile = comm[1]
-            sendFile = comm[2]
-            rtp.getFile(getFile, ip, port, port)
-            rtp.sendFile(sendFile, ip, port, port)
-            print(format("Downloaded get_{0}, sent post_{1}", getFile, sendFile))
-        elif comm[0].lower() == "disconnect":
-            rtp.close(ip, port, port)
-            print(format("Disconnected from server at {0}.  Goodbye!", ip))
-            break
-                
+main()
                 
