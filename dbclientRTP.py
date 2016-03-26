@@ -1,6 +1,7 @@
 import socket
 import sys
 import RTP
+import random
 
 def main():
     if (len(sys.argv) < 3):
@@ -18,7 +19,7 @@ def main():
     for s in sys.argv[3:]:
         MESSAGE += s + ','
     MESSAGE = MESSAGE[:-1]
-    r = RTP.RTP(HOST_IP, HOST_PORT, HOST_PORT, False, rwnd)
+    r = RTP.RTP(HOST_IP, random.randint(0, 65535), random.randint(0, 65535), False, rwnd)
     r.connect(UDP_IP, UDP_PORT, RTP_PORT)
     r.send(MESSAGE, UDP_IP, UDP_PORT, RTP_PORT)
     #send message

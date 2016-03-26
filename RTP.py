@@ -24,6 +24,7 @@ class RTP:
         self.state = {}                                             #dictionary, key is client address & port tuple, value is connection state
         self.files = {}                                             #dictionary, key is client address & port tuple, value is list of file segments in order
         self.prevpkts = {}                                          #dictionary, key is client address & port tuple, value is list of the previous packet for each client
+        self.filename = {}
 
     def connect(self, ip_dest, uPort, dPort): #client-side establishment of connection
         synpkt_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, 0)
@@ -35,16 +36,6 @@ class RTP:
         self.s.sendto(synpkt.toByteArray(), addr)
         self.seqn += 1
         self.state[ip_dest, uPort, dPort] = Connection.LISTEN
-        data = None
-        syn = False
-        ack = False
-        while ((not syn) or (not ack)):
-            data, udp_addr = self.s.recvfrom(1024)
-            if (not data):
-                continue
-            synack = RTPpkt(None, data, True)
-            syn = synack.hdr.SYN
-            ack = synack.hdr.ACK
         self.state[ip_dest, uPort, dPort] = Connection.CONNECTED
 
     def accept(self, ip_client, uPort, dPort): #server-side acceptance of connection
@@ -70,16 +61,19 @@ class RTP:
             for (ip_dest, uPort, dPort) in self.pktQ:
                 if (self.pktQ[ip_dest, uPort, dPort]):
                     sndpkt = self.pktQ[ip_dest, uPort, dPort].pop(0)
+                    sndpkt.hdr.seqn = self.seqn
                     sndpkt.hdr.updateTimestamp()
-                    self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
                     self.seqn += 1
+                    self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
+                    print(sndpkt.hdr.seqn)
+                    print(sndpkt.hdr.FIN)
                 else:
                     count += 1
             if (count == len(self.pktQ)):
                 break
 
     def close(self, ip_dest, uPort, dPort):
-        if (self.server): #server-side close connection, sends FIN, ACK
+        if (self.server): #server-side close connection, sends FINACK
             finack_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, self.seqn)
             finack_hdr.FIN = True
             finack_hdr.ACK = True
@@ -109,35 +103,44 @@ class RTP:
         data, addr = self.s.recvfrom(1024)
         if (data):
             rcvpkt = RTPpkt(None, data, True)
-            print('GET:' + str(rcvpkt.hdr.GET))
             #Duplicate detection: drop packet from same client with identical seqn as the previous packet
-            if (((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.prevpkts) and self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].hdr.seqn == rcvpkt.hdr.seqn):
+            if (((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.prevpkts) and (rcvpkt.hdr.seqn in self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort])):
                 return
             if (rcvpkt.hdr.SYN):
                 self.accept(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
             elif (rcvpkt.hdr.FIN and not rcvpkt.hdr.ACK):
                 self.close(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
             elif (((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.state) and self.state[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] == Connection.CONNECTED):
-                print('connected')
+                if ((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) not in self.files):
+                    self.files[(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)] = set([])
                 if (rcvpkt.hdr.GET):
                     self.sendFile(rcvpkt.data.decode(), rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
                 elif (rcvpkt.hdr.BEG):
-                    self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = [rcvpkt.truncate(data)]
+                    self.filename[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = rcvpkt.data.decode()
                 elif (not rcvpkt.hdr.FIN):
                     if((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.files):
-                        self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].extend(rcvpkt.data)
+                        self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].add(rcvpkt)
                 else:
+                    self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].add(rcvpkt)
                     content = []
-                    for byte in self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort][1:]:
-                        content.append(byte)
+                    segments = list(self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort])
+                    segments.sort()
+                    for segment in segments:
+                        content.extend(segment.data)
                     content.extend(rcvpkt.data)
-                    with open('post_' + self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort][0], 'wb') as f:
+                    with open('post_' + self.filename[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort], 'wb') as f:
                         f.write(bytes(content))
                     self.files.pop((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort))
-                self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = rcvpkt
+                if (not (rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.prevpkts):
+                    self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = [rcvpkt.hdr.seqn]
+                else:
+                    self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].append(rcvpkt.hdr.seqn)
                 self.sendpkts()
                 return (rcvpkt.data, rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
-            self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = rcvpkt
+            if (not (rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.prevpkts):
+                self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = [rcvpkt.hdr.seqn]
+            else:
+                self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].append(rcvpkt.hdr.seqn)
         
 
         
@@ -150,17 +153,26 @@ class RTP:
         sndpkt = RTPpkt(sndpkt_hdr, filename.encode(), False)
         self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
         self.seqn += 1
-        content = []
+        content = set([])
         fin = False
-        while (not fin):
+        beg = False
+        content.add(RTPpkt(None, self.s.recvfrom(1024)[0], True))
+        while (1):
             data = ''
             while (not data):
                 data, addr = self.s.recvfrom(1024)
             rcvpkt = RTPpkt(None, data, True)
-            fin = rcvpkt.hdr.FIN
-            content.extend(rcvpkt.data)
-        with open('get_' + filename, 'wb') as f:
-            f.write(bytes(content))
+            content.add(rcvpkt)
+            if (rcvpkt.hdr.FIN):
+                with open('get_' + filename, 'wb') as f:
+                    writtenFile = []
+                    segList = list(content)
+                    segList.sort()
+                    for pkt in segList:
+                        writtenFile.extend(pkt.data)
+                    f.write(bytes(writtenFile))
+                print([pkt.hdr.seqn for pkt in segList])
+                return
             
 #both client and server can use this to send a single message
     def send(self, message, ip_dest, uPort, dPort):
@@ -232,7 +244,21 @@ class RTPpkt:
             self.length = 0
             self.length = len(self.toByteArray())
             self.checkSum()
-
+    
+    def __lt__(self, other):
+        return self.hdr.seqn < other.hdr.seqn
+    def __le__(self, other):
+        return self.hdr.seqn <= other.hdr.seqn
+    def __eq__(self, other):
+        return self.hdr.seqn == other.hdr.seqn
+    def __ne__(self, other):
+        return self.hdr.seqn != other.hdr.seqn
+    def __gt__(self, other):
+        return self.hdr.seqn > other.hdr.seqn
+    def __ge__(self, other):
+        return self.hdr.seqn >= other.hdr.seqn
+    def __hash__(self):
+        return self.hdr.seqn * 17 + self.checksum * 3
 #calculates checksum, stores it in self.checksum
     def checkSum(self):
         self.checksum = sum(self.toByteArray()[3:]) % 0xffff
@@ -297,10 +323,6 @@ class RTPpkt:
         if(self.data):
             for char in self.data:
                 content.append(char)
-        for bit in content:
-            if bit > 255 or bit < 0:
-                print(bit)
-                print(content.index(bit))
         return bytes(content)
 
 #returns the payload of a packet byte array in string format    
