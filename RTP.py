@@ -20,6 +20,7 @@ class RTP:
         self.rwnd = max(receiveWindow, MAXSIZE)
         self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)   #s is the socket
         self.s.bind(('', udp_port))
+        self.s.setblocking(0)
         self.seqn = 0 # sequence number
         self.state = {}                                             #dictionary, key is client address & port tuple, value is connection state
         self.files = {}                                             #dictionary, key is client address & port tuple, value is list of file segments in order
@@ -55,22 +56,16 @@ class RTP:
             self.pktQ[rtp_addr] = []
         self.pktQ[rtp_addr].append(pkt)
     
-    def sendpkts(self): #server-side iteration over pktQ and send one for each client
-        while 1:
-            count = 0
-            for (ip_dest, uPort, dPort) in self.pktQ:
-                if (self.pktQ[ip_dest, uPort, dPort]):
-                    sndpkt = self.pktQ[ip_dest, uPort, dPort].pop(0)
-                    sndpkt.hdr.seqn = self.seqn
-                    sndpkt.hdr.updateTimestamp()
-                    self.seqn += 1
-                    self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
-                    print(sndpkt.hdr.seqn)
-                    print(sndpkt.hdr.FIN)
-                else:
-                    count += 1
-            if (count == len(self.pktQ)):
-                break
+    def sendpkts(self): #server-side iteration over pktQ and send one for each client       
+        for (ip_dest, uPort, dPort) in self.pktQ:
+            if (self.pktQ[ip_dest, uPort, dPort]):
+                sndpkt = self.pktQ[ip_dest, uPort, dPort].pop(0)
+                sndpkt.hdr.seqn = self.seqn
+                sndpkt.hdr.updateTimestamp()
+                self.seqn += 1
+                self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
+                print(sndpkt.hdr.seqn)
+                print(sndpkt.hdr.FIN)
 
     def close(self, ip_dest, uPort, dPort):
         if (self.server): #server-side close connection, sends FINACK
@@ -100,7 +95,10 @@ class RTP:
     def listen(self): 
         self.sendpkts()
         #scan for new packets first
-        data, addr = self.s.recvfrom(1024)
+        try:
+            data, addr = self.s.recvfrom(1024)
+        except:
+            return
         if (data):
             rcvpkt = RTPpkt(None, data, True)
             #Duplicate detection: drop packet from same client with identical seqn as the previous packet
@@ -143,7 +141,8 @@ class RTP:
                 self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].append(rcvpkt.hdr.seqn)
         
 
-        
+    def getPost(self, getName, postName, ip_dest, uPort, dPort): #client-side get-post, WIP
+        pass
 
     def getFile(self, filename, ip_dest, uPort, dPort): #client-side get file form server
         sndpkt_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, self.seqn)
@@ -156,11 +155,21 @@ class RTP:
         content = set([])
         fin = False
         beg = False
-        content.add(RTPpkt(None, self.s.recvfrom(1024)[0], True))
+        flag = False
+        while(not flag):
+            try:
+                firstpkt = self.s.recvfrom(1024)[0]
+                flag = True
+            except:
+                pass
+        content.add(RTPpkt(None, firstpkt, True))
         while (1):
             data = ''
             while (not data):
-                data, addr = self.s.recvfrom(1024)
+                try:
+                    data, addr = self.s.recvfrom(1024)
+                except:
+                    continue
             rcvpkt = RTPpkt(None, data, True)
             content.add(rcvpkt)
             if (rcvpkt.hdr.FIN):
