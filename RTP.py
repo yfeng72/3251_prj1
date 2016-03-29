@@ -110,22 +110,19 @@ class RTP:
                 self.close(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
             elif (((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.state) and self.state[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] == Connection.CONNECTED):
                 if ((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) not in self.files):
-                    self.files[(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)] = set([])
+                    self.files[(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)] = []
                 if (rcvpkt.hdr.GET):
                     self.sendFile(rcvpkt.data.decode(), rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
                 elif (rcvpkt.hdr.BEG):
                     self.filename[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = rcvpkt.data.decode()
                 elif (not rcvpkt.hdr.FIN):
                     if((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.files):
-                        self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].add(rcvpkt)
+                        self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].append(rcvpkt)
                 else:
-                    self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].add(rcvpkt)
+                    self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].append(rcvpkt)
                     content = []
-                    segments = list(self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort])
-                    segments.sort()
-                    for segment in segments:
+                    for segment in self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort]:
                         content.extend(segment.data)
-                    content.extend(rcvpkt.data)
                     with open('post_' + self.filename[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort], 'wb') as f:
                         f.write(bytes(content))
                     self.files.pop((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort))
@@ -152,7 +149,7 @@ class RTP:
         sndpkt = RTPpkt(sndpkt_hdr, filename.encode(), False)
         self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
         self.seqn += 1
-        content = set([])
+        content = []
         fin = False
         beg = False
         flag = False
@@ -162,22 +159,20 @@ class RTP:
                 flag = True
             except:
                 pass
-        content.add(RTPpkt(None, firstpkt, True))
+        content.append(RTPpkt(None, firstpkt, True))
         while (1):
             data = ''
             while (not data):
                 try:
                     data, addr = self.s.recvfrom(1024)
                 except:
-                    continue
+                    pass
             rcvpkt = RTPpkt(None, data, True)
-            content.add(rcvpkt)
+            content.append(rcvpkt)
             if (rcvpkt.hdr.FIN):
                 with open('get_' + filename, 'wb') as f:
                     writtenFile = []
-                    segList = list(content)
-                    segList.sort()
-                    for pkt in segList:
+                    for pkt in content:
                         writtenFile.extend(pkt.data)
                     f.write(bytes(writtenFile))
                 print([pkt.hdr.seqn for pkt in segList])
@@ -357,4 +352,3 @@ class RTPhdr:
 
     def updateTimestamp(self):
         self.timestamp = int(time.time())
-

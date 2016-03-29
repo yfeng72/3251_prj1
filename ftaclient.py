@@ -1,7 +1,6 @@
 import RTP
 import sys
 import socket
-import random
 
 def main():
     if len(sys.argv) != 3:
@@ -14,7 +13,7 @@ def main():
         dest_ip = arg1[0]
         port = int(arg1[1])
         window = int(sys.argv[2])
-        r = RTP.RTP(host_ip, random.randint(0, 65535), random.randint(0, 65535), False, window)
+        r = RTP.RTP(host_ip, host_port, host_port, False, window)
         r.connect(dest_ip, port, port)
         print("Connected to server at " + str(dest_ip) + ':' + str(port))
         comm = None
@@ -32,10 +31,9 @@ def main():
             elif comm[0].lower() == "get-post":
                 getFile = comm[1]
                 sendFile = comm[2]
-                r.sendFile(sendFile, dest_ip, port, port)
                 r.getFile(getFile, dest_ip, port, port)
                 print('file obtained')
-                
+                r.sendFile(sendFile, dest_ip, port, port)
                 print("Downloaded get_{0}, sent post_{1}".format(getFile, sendFile))
             elif comm[0].lower() == "disconnect":
                 r.close(dest_ip, port, port)
