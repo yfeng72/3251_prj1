@@ -56,7 +56,8 @@ class RTP:
             self.pktQ[rtp_addr] = []
         self.pktQ[rtp_addr].append(pkt)
     
-    def sendpkts(self): #server-side iteration over pktQ and send one for each client       
+    def sendpkts(self): #server-side iteration over pktQ and send one for each client
+        fin = False     
         for (ip_dest, uPort, dPort) in self.pktQ:
             if (self.pktQ[ip_dest, uPort, dPort]):
                 sndpkt = self.pktQ[ip_dest, uPort, dPort].pop(0)
@@ -66,6 +67,9 @@ class RTP:
                 self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
                 print(sndpkt.hdr.seqn)
                 print(sndpkt.hdr.FIN)
+                fin = sndpkt.hdr.FIN
+        return fin
+
 
     def close(self, ip_dest, uPort, dPort):
         if (self.server): #server-side close connection, sends FINACK
@@ -112,7 +116,7 @@ class RTP:
                 if ((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) not in self.files):
                     self.files[(rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)] = []
                 if (rcvpkt.hdr.GET):
-                    self.sendFile(rcvpkt.data.decode(), rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
+                    self.sendFile(rcvpkt.data.decode(), rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort, False)
                 elif (rcvpkt.hdr.BEG):
                     self.filename[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = rcvpkt.data.decode()
                 elif (not rcvpkt.hdr.FIN):
@@ -125,6 +129,7 @@ class RTP:
                         content.extend(segment.data)
                     with open('post_' + self.filename[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort], 'wb') as f:
                         f.write(bytes(content))
+                    print([pkt.hdr.seqn for pkt in self.files[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort]])
                     self.files.pop((rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort))
                 if (not (rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.prevpkts):
                     self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = [rcvpkt.hdr.seqn]
@@ -138,8 +143,41 @@ class RTP:
                 self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].append(rcvpkt.hdr.seqn)
         
 
-    def getPost(self, getName, postName, ip_dest, uPort, dPort): #client-side get-post, WIP
-        pass
+    def getPost(self, getName, postName, ip_dest, uPort, dPort): #client-side get-post
+        sndpkt_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, self.seqn)
+        sndpkt_hdr.sPort_udp = self.udp_port
+        sndpkt_hdr.dPort_udp = uPort
+        sndpkt_hdr.GET = True
+        sndpkt = RTPpkt(sndpkt_hdr, postName.encode(), False)
+        self.queue(sndpkt)
+        content = []
+        prevseqn = []
+        fin = False
+        beg = False
+        pflag = False
+        gflag = False
+        self.sendFile(postName, ip_dest, uPort, dPort, True)
+        while (not pflag or not gflag):
+            if (self.sendpkts()):
+                pflag = True
+            data = ''
+            try:
+                data, addr = self.s.recvfrom(1024)
+            except:
+                pass
+            if (data):
+                rcvpkt = RTPpkt(None, data, True)
+                if (rcvpkt.hdr.seqn not in prevseqn):
+                    prevseqn.append(rcvpkt.hdr.seqn)
+                    content.extend(rcvpkt.data)
+                if (rcvpkt.hdr.FIN):
+                    with open('get_' + getName, 'wb') as f:
+                        f.write(bytes(content))
+                    gflag = True
+
+
+
+
 
     def getFile(self, filename, ip_dest, uPort, dPort): #client-side get file form server
         sndpkt_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, self.seqn)
@@ -175,7 +213,7 @@ class RTP:
                     for pkt in content:
                         writtenFile.extend(pkt.data)
                     f.write(bytes(writtenFile))
-                print([pkt.hdr.seqn for pkt in segList])
+                print([pkt.hdr.seqn for pkt in content])
                 return
             
 #both client and server can use this to send a single message
@@ -199,7 +237,7 @@ class RTP:
         return (rcvpkt.truncate(data))
 
 #for both client and server to send/post a file to each other      
-    def sendFile(self, filename, ip_dest, uPort, dPort):
+    def sendFile(self, filename, ip_dest, uPort, dPort, getPost):
         content = []
         segment = ''
         count = 0
@@ -214,8 +252,11 @@ class RTP:
             namepkt_hdr.sPort_udp = self.udp_port
             namepkt_hdr.dPort_udp = uPort
             namepkt = RTPpkt(namepkt_hdr, filename.encode(), False)
-            self.s.sendto(namepkt.toByteArray(), (ip_dest, uPort))
-            self.seqn += 1
+            if (not getPost):
+                self.s.sendto(namepkt.toByteArray(), (ip_dest, uPort))
+                self.seqn += 1
+            else:
+                self.queue(namepkt)       
         for pktn in range(count):
             pkt_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, self.seqn)
             pkt_hdr.offset = pktn % 255
@@ -230,8 +271,11 @@ class RTP:
             if (self.server):
                 self.queue(sndpkt)
             else:
-                self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
-                self.seqn += 1
+                if (not getPost):
+                    self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
+                    self.seqn += 1
+                else:
+                    self.queue(sndpkt)
 
 class RTPpkt:
     def __init__(self, header, data, is_raw_data):
