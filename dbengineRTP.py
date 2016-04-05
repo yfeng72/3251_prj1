@@ -52,6 +52,6 @@ def main():
             continue
         #send data
         r.send(msg[:-2], ip_dest, uPort, rPort)
-        print ("Received data:", data)
+        print ("Sent data:", msg[:-2])
 
 main()

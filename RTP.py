@@ -36,8 +36,16 @@ class RTP:
         addr = ip_dest, uPort
         self.s.sendto(synpkt.toByteArray(), addr)
         self.seqn += 1
-        self.state[ip_dest, uPort, dPort] = Connection.LISTEN
-        self.state[ip_dest, uPort, dPort] = Connection.CONNECTED
+        data = ''
+        while (not data):
+            try:
+                data, addr = self.s.recvfrom(1024)
+            except:
+                pass
+        synack = RTPpkt(None, data, True)
+        if (synack.hdr.SYN and synack.hdr.ACK):
+            self.state[ip_dest, uPort, dPort] = Connection.LISTEN
+            self.state[ip_dest, uPort, dPort] = Connection.CONNECTED
 
     def accept(self, ip_client, uPort, dPort): #server-side acceptance of connection
         synack_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_client, dPort, self.seqn)
@@ -135,7 +143,6 @@ class RTP:
                     self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = [rcvpkt.hdr.seqn]
                 else:
                     self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort].append(rcvpkt.hdr.seqn)
-                self.sendpkts()
                 return (rcvpkt.data, rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort)
             if (not (rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort) in self.prevpkts):
                 self.prevpkts[rcvpkt.hdr.ip_src, rcvpkt.hdr.sPort_udp, rcvpkt.hdr.sPort] = [rcvpkt.hdr.seqn]
@@ -232,8 +239,12 @@ class RTP:
     def recv(self, ip_dest, uPort, dPort):
         data = ''
         while (not data):
-            data, addr = self.s.recvfrom(1024)
+            try:
+                data, addr = self.s.recvfrom(1024)
+            except:
+                pass
         rcvpkt = RTPpkt(None, data, True)
+        print(data)
         return (rcvpkt.truncate(data))
 
 #for both client and server to send/post a file to each other      
