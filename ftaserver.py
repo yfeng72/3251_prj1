@@ -10,6 +10,6 @@ def main():
         window = int(sys.argv[2])
         RTPserv = RTP.RTP('127.0.0.1', port, port, True, window)
         while True:
-            info = RTPserv.listen()
+            RTPserv.listen()
             
 main()
