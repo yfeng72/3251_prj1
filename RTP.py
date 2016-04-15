@@ -391,7 +391,7 @@ class RTPpkt:
         self.checksum = sum(self.toByteArray()[2:]) % 0xffff
 
 #Coding header in packet bytes: bytes 4-7 are ip_src, bytes 8-9 are udp port, bytes 10-11 are rtp port of source. Bytes 12-19 are similarly structured for destination
-#Bytes 20-23 hold sequence number, bytes 24-25 hold offset number, byte 26 is flags, bytes 27-30 hold timestamp. Length of non-payload: 37 Bytes
+#Bytes 20-23 hold sequence number, bytes 24-25 hold offset number, byte 26 is flags, bytes 27-30 hold timestamp. Length of non-payload: 40 Bytes
     def parseHeader(self, raw_data):
         ip_src = str(raw_data[4]) + '.' + str(raw_data[5]) + '.' + str(raw_data[6]) + '.' + str(raw_data[7])
         sPort = (raw_data[10] << 8) + raw_data[11]
@@ -419,11 +419,11 @@ class RTPpkt:
 #      and the length byte, data bytes last. IT IS POSSIBLE FOR DATA TO BE None.
     def toByteArray(self):
         content = []
-        content.append(self.checksum >> 8)                                          #bit 0
+        content.append(self.checksum >> 8)                                          #byte 0
         content.append(self.checksum - ((self.checksum >> 8) << 8))                 
-        content.append(self.length >> 8)                                            #bit 2
+        content.append(self.length >> 8)                                            #byte 2
         content.append(self.length - ((self.length >> 8) << 8)) 
-        content.append(int(self.hdr.ip_src.split('.')[0]))                          #bit 4
+        content.append(int(self.hdr.ip_src.split('.')[0]))                          #byte 4
         content.append(int(self.hdr.ip_src.split('.')[1]))                               
         content.append(int(self.hdr.ip_src.split('.')[2]))
         content.append(int(self.hdr.ip_src.split('.')[3]))
@@ -431,7 +431,7 @@ class RTPpkt:
         content.append(self.hdr.sPort_udp - ((self.hdr.sPort_udp >> 8) << 8))
         content.append(self.hdr.sPort >> 8)
         content.append(self.hdr.sPort - ((self.hdr.sPort >> 8) << 8))
-        content.append(int(self.hdr.ip_dest.split('.')[0]))                         #bit 12
+        content.append(int(self.hdr.ip_dest.split('.')[0]))                         #byte 12
         content.append(int(self.hdr.ip_dest.split('.')[1]))
         content.append(int(self.hdr.ip_dest.split('.')[2]))
         content.append(int(self.hdr.ip_dest.split('.')[3]))
@@ -439,26 +439,26 @@ class RTPpkt:
         content.append(self.hdr.dPort_udp - ((self.hdr.dPort_udp >> 8) << 8))
         content.append(self.hdr.dPort >> 8)
         content.append(self.hdr.dPort - ((self.hdr.dPort >> 8) << 8))               
-        content.append(self.hdr.seqn >> 24)                                         #bit 20
+        content.append(self.hdr.seqn >> 24)                                         #byte 20
         content.append((self.hdr.seqn >> 16) - ((self.hdr.seqn >> 24) << 8))
         content.append((self.hdr.seqn >> 8) - ((self.hdr.seqn >> 16) << 8))
         content.append(self.hdr.seqn - ((self.hdr.seqn >> 8) << 8))
-        content.append(self.hdr.offset >> 24)                                       #bit 24
+        content.append(self.hdr.offset >> 24)                                       #byte 24
         content.append((self.hdr.offset >> 16) - ((self.hdr.offset >> 24) << 8))
         content.append((self.hdr.offset >> 8) - ((self.hdr.offset >> 16) << 8))
         content.append(self.hdr.offset - ((self.hdr.offset >> 8) << 8))
         content.append((int(self.hdr.POS) << 5) + (int(self.hdr.GET) << 4) + (int(self.hdr.SYN) << 3) + (int(self.hdr.ACK) << 2) + (int(self.hdr.BEG) << 1) + int(self.hdr.FIN))
-        content.append(self.hdr.timestamp >> 24)                                    #bit 29
+        content.append(self.hdr.timestamp >> 24)                                    #byte 29
         content.append((self.hdr.timestamp >> 16) - ((self.hdr.timestamp >> 24) << 8))
         content.append((self.hdr.timestamp >> 8) - ((self.hdr.timestamp >> 16) << 8))
-        content.append(self.hdr.timestamp - ((self.hdr.timestamp >> 8) << 8))       #bit 32
-        content.append(self.hdr.ackn >> 24)                                         #bit 33        
+        content.append(self.hdr.timestamp - ((self.hdr.timestamp >> 8) << 8))       #byte 32
+        content.append(self.hdr.ackn >> 24)                                         #byte 33        
         content.append((self.hdr.ackn >> 16) - ((self.hdr.ackn >> 24) << 8))
         content.append((self.hdr.ackn >> 8) - ((self.hdr.ackn >> 16) << 8))
-        content.append(self.hdr.ackn - ((self.hdr.ackn >> 8) << 8))                 #bit 36
-        content.append(self.hdr.rwnd >> 16)                                         #bit 37
+        content.append(self.hdr.ackn - ((self.hdr.ackn >> 8) << 8))                 #byte 36
+        content.append(self.hdr.rwnd >> 16)                                         #byte 37
         content.append((self.hdr.rwnd >> 8) - ((self.hdr.rwnd >> 16) << 8))
-        content.append(self.hdr.rwnd - ((self.hdr.rwnd >> 8) << 8))                 #bit 39
+        content.append(self.hdr.rwnd - ((self.hdr.rwnd >> 8) << 8))                 #byte 39
         if(self.data):
             for char in self.data:
                 content.append(char)
