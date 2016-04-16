@@ -58,7 +58,7 @@ class RTP:
             self.seqn += 1
             self.state[ip_dest, uPort, dPort] = Connection.CONNECTED
 
-    def accept(self, ip_client, uPort, dPort): #server-side acceptance of connection
+    def accept(self, ip_client, uPort, dPort, cwnd): #server-side acceptance of connection
         synack_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_client, dPort, self.seqn)
         synack_hdr.ACK = True
         synack_hdr.SYN = True
@@ -67,6 +67,7 @@ class RTP:
         synack = RTPpkt(synack_hdr, None, False)
         self.queue(synack)
         self.state[ip_client, uPort, dPort] = Connection.CONNECTED
+        self.cwnd[ip_client, uPort, dPort] = cwnd
 
 
     def queue(self, pkt): #queues a packet to sending packet list
@@ -242,11 +243,24 @@ class RTP:
                         f.write(bytes(content))
                     gflag = True
 
+#checks for ACK and reorders packet for window size 1, returns when ACK is received
+    def checkACK(self, sndpkt):
+        currentTime = time.time()
+        while (1):
+            try:
+                data, addr = self.s.recvfrom(1024)
+            except:
+                if (time.time() > currentTime + 2):
+                    self.s.sendto(sndpkt, (sndpkt.hdr.ip_dest, sndpkt.hdr.dPort_udp))
+                    currentTime = time.time()
+                continue
+            ackpkt = RTPpkt(None, data, True)
+            if (ackpkt.examineChksum() and ackpkt.hdr.dPort == self.rtp_port and ackpkt.hdr.ACK and ackpkt.hdr.ackn == sndpkt.hdr.seqn):
+                return ackpkt
 
 
-
-
-    def getFile(self, filename, ip_dest, uPort, dPort): #client-side get file form server
+#Client-side get file form server, ACK packets' offset numbers are set to maximum sequentially received offset number + 1
+    def getFile(self, filename, ip_dest, uPort, dPort): 
         sndpkt_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, self.seqn)
         sndpkt_hdr.sPort_udp = self.udp_port
         sndpkt_hdr.dPort_udp = uPort
@@ -254,20 +268,40 @@ class RTP:
         sndpkt = RTPpkt(sndpkt_hdr, filename.encode(), False)
         self.s.sendto(sndpkt.toByteArray(), (ip_dest, uPort))
         self.seqn += 1
-        content = []
+        ackpkt = checkACK(sndpkt)
+        segments = {}
+        offset = 0
         fin = False
-        beg = False
-        flag = False
-        pkts = []
-        data = ''
-        while (1):
+        while (not fin):
             try:
                 data, addr = self.s.recvfrom(1024)
             except:
                 continue
             rcvpkt = RTPpkt(None, data, True)
-            if (self.rtp_port == rcvpkt.hdr.dPort and lastpkt.hdr.seqn):
-                return
+            if (rcvpkt.hdr.dPort != self.rtp_port or not rcvpkt.examineChksum()):
+                continue
+            if (rcvpkt.hdr.offset < offset + self.rwnd + 1 and rcvpkt.hdr.offset >= offset):
+                segments[rcvpkt.hdr.offset] = (rcvpkt.data, rcvpkt.FIN)
+            offsetn = offset
+            while (offsetn < offset + self.rwnd):
+                if (not offsetn in segments):
+                    break
+            ackpkt_hdr = RTPhdr(self.ip_addr, self.rtp_port, ip_dest, dPort, self.seqn)
+            ackpkt_hdr.sPort_udp = self.udp_port
+            ackpkt_hdr.dPort_udp = uPort
+            ackpkt_hdr.ACK = True
+            ackpkt_hdr.offset = offsetn
+            ackpkt = RTPpkt(ackpkt_hdr, None, False)
+            self.s.sendto(ackpkt.toByteArray(), (ip_dest, uPort))
+            self.seqn += 1
+            for i in range(offset, offsetn):
+                with open(filename, 'ab') as f:
+                    f.write(bytes(segments[i][0]))
+                fin = segments.pop(i)[1]
+                if (fin):
+                    break
+            offset = offsetn - 1
+
             
 #both client and server can use this to send a single message
     def send(self, message, ip_dest, uPort, dPort):
