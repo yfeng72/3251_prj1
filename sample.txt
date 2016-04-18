@@ -1,0 +1,16 @@
+Sample input for running ftaserver.py:
+python3 ftaserver.py 8591 200
+
+Sample input for running ftaclient.py:
+python3 ftaclient.py 127.0.0.1:8591 200
+
+When prompted, possible inputs are:
+get 3251.jpg
+get-post 3251.jpg 3251.jpg
+disconnect
+
+Sample input for running dbengineRTP.py:
+python3 dbengineRTP.py 8591
+
+Sample input for running dbclientRTP.py:
+python3 dbclientRTP.py 127.0.0.1:8591 903076259 gpa first_name last_name
